@@ -1,0 +1,68 @@
+job_search_task:
+  description: >
+    Search for the most relevant job openings based on the user's input criteria.
+    The user will provide a target job title and location (e.g., "Data Scientist in New York").
+    Gather the top job listings from Indeed or connected MCP servers. 
+    For each job, return the title, company name, location, and a short job description.
+  expected_output: >
+    A structured list (JSON or table) of 5–10 job listings, each containing:
+    - Job Title
+    - Company
+    - Location
+    - Brief Description or Requirements Summary
+  agent: job_searcher
+
+employer_verification_task:
+  description: >
+    For each job returned by the job search task, check whether the employer sponsors 
+    international candidates using the H-1B Employer Data Hub or the connected MCP server.
+    Ensure results are accurate and exclude duplicate or false matches.
+  expected_output: >
+    A JSON list where each entry includes:
+    - Company Name
+    - Sponsorship Eligibility (True/False)
+    - Matching Record Count (if applicable)
+    - Notes if data was unavailable
+  agent: employer_verifier
+
+resume_tailoring_task:
+  description: >
+    For each verified job where the employer is eligible for sponsorship, 
+    tailor the user's resume to match the specific job description and requirements.
+    Incorporate relevant skills, phrases, and tone alignment while keeping the resume 
+    concise and ATS-friendly. If the RAG memory provides past relevant sections, 
+    integrate them naturally for consistency.
+  expected_output: >
+    A tailored resume text block ready for download or saving.
+    The output should include:
+    - Job Title and Company Name
+    - Tailored Resume Text
+    - Summary of Changes Made (bullet points)
+  agent: resume_tailor
+
+memory_update_task:
+  description: >
+    Store each newly tailored resume and related metadata (company, job title, date) 
+    in the vector memory system. This ensures future tailoring benefits from past 
+    applications. Retrieve and update existing embeddings if a similar company or 
+    role already exists.
+  expected_output: >
+    A confirmation message including:
+    - Resume Stored Status (Success/Updated)
+    - Metadata Summary (company, job title, embedding ID)
+  agent: memory_curator
+
+workflow_orchestration_task:
+  description: >
+    Manage the complete workflow of the job search assistant.
+    Start by accepting user input (job title, city, resume).
+    Then, call the job_search_task → employer_verification_task → resume_tailoring_task → memory_update_task sequentially.
+    Aggregate all outputs into a final structured report for display or user download.
+  expected_output: >
+    A comprehensive job application summary including:
+    - List of Jobs Found
+    - Sponsorship Verification Results
+    - Tailored Resume Text(s)
+    - Memory Update Confirmation
+    Formatted in clean markdown or JSON.
+  agent: orchestrator

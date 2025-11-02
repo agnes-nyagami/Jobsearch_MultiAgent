@@ -1,0 +1,24 @@
+[project]
+name = "ai_jobproject"
+version = "0.1.0"
+description = "AI_Jobproject using crewAI"
+authors = [{ name = "Nyagami", email = "abn5753@uncw.edu" }]
+requires-python = ">=3.10,<3.14"
+dependencies = [
+    "crewai[tools]==1.2.1"
+]
+
+[project.scripts]
+ai_jobproject = "ai_jobproject.main:run"
+run_crew = "ai_jobproject.main:run"
+train = "ai_jobproject.main:train"
+replay = "ai_jobproject.main:replay"
+test = "ai_jobproject.main:test"
+run_with_trigger = "ai_jobproject.main:run_with_trigger"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.crewai]
+type = "crew"
