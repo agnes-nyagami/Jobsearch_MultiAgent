@@ -1,6 +1,7 @@
 from typing import List, Optional, Dict, Any
 from crewai import Agent, Crew, Process, Task
 from crewai.project import CrewBase, agent, crew, task
+from crewai_tools import FileReadTool, MDXSearchTool
 from dotenv import load_dotenv
 from pydantic import BaseModel, Field
 import requests
@@ -8,13 +9,9 @@ import pandas as pd
 import os
 import json
 
-
 load_dotenv()
 
-# --- CrewAI persistent storage ---
-os.environ["CREWAI_STORAGE_DIR"] = "./my_resume_storage"
-
-# --- OpenAI client only ---
+# --- OpenAI client (unchanged) ---
 class OpenAIClient:
     def __init__(self, api_key: str):
         self.api_key = api_key
@@ -37,37 +34,17 @@ if not OPENAI_KEY:
     raise RuntimeError("No OpenAI API key found. Set OPENAI_API_KEY in your environment.")
 LLM = OpenAIClient(OPENAI_KEY)
 
-
 # --- Simple Indeed MCP client ---
 class MCPIndeedClient:
     def __init__(self, base_url: str):
         self.base_url = base_url.rstrip("/")
 
-    def search_jobs(self, title: str, city: str, limit: int = 10) -> List[Dict[str, Any]]:
+    def search_jobs(self, title: str, city: str, limit: int = 3) -> List[Dict[str, Any]]:
         url = f"{self.base_url}/search"
         params = {"title": title, "city": city, "limit": limit}
         r = requests.get(url, params=params, timeout=30)
         r.raise_for_status()
         return r.json().get("jobs", [])
-
-
-# --- Simplified Local H-1B verifier (CSV only) ---
-class MCPH1BClient:
-    def __init__(self, local_csv: str):
-        self.local_csv = local_csv
-
-    def verify(self, company_name: str) -> Dict[str, Any]:
-        if not os.path.exists(self.local_csv):
-            return {"eligible": False, "records": 0, "note": "CSV not found"}
-        df = pd.read_csv(self.local_csv)
-        if "Employer" not in df.columns:
-            return {"eligible": False, "records": 0, "note": "Missing 'Employer' column"}
-        matches = df[df["Employer"].str.contains(company_name, case=False, na=False)]
-        return {
-            "eligible": not matches.empty,
-            "records": len(matches),
-            "note": "Employer found in USCIS H-1B dataset" if not matches.empty else "No record found"
-        }
 
 
 # --- Structured models ---
@@ -99,19 +76,35 @@ class JobSearchCrew:
     agents_config = "config/agents.yaml"
     tasks_config = "config/tasks.yaml"
 
-    indeed_mcp = MCPIndeedClient(os.getenv("MCP_INDEED_URL", "http://localhost:8001"))
-    h1b_mcp = MCPH1BClient(local_csv=r"C:\Users\Aggy\AIJobtl\H-1B_DATA\H1B_2020_2023_summary.csv")
+    # --- Tools ---
+    read_resume = FileReadTool(file_path=r"C:\Users\Aggy\AIJobtl\Agnes_Nyagami.txt")
+    semantic_search_resume = MDXSearchTool(mdx=r"C:\Users\Aggy\AIJobtl\Agnes_Nyagami.txt")
+    read_h1b_csv = FileReadTool(file_path=r"C:\Users\Aggy\AIJobtl\H-1B_DATA\H1B_2020_2023_summary.csv")
 
+    indeed_mcp = MCPIndeedClient(os.getenv("MCP_INDEED_URL", "http://localhost:8001"))
+
+    # --- Agents ---
     @agent
     def job_search_agent(self) -> Agent:
         return Agent(config=self.agents_config.get("job_searcher"), tools=[], verbose=False)
 
     @agent
     def employer_verifier_agent(self) -> Agent:
-        return Agent(config=self.agents_config.get("employer_verifier"), tools=[], verbose=False)
+        # Uses FileReadTool to access CSV directly
+        return Agent(config=self.agents_config.get("employer_verifier"),
+                     tools=[self.read_h1b_csv],
+                     verbose=False)
+
+    @agent
+    def resume_reader_agent(self) -> Agent:
+        # Uses resume reading and semantic search tools (RAG)
+        return Agent(config=self.agents_config.get("resume_reader"),
+                     tools=[self.read_resume, self.semantic_search_resume],
+                     verbose=False)
 
     @agent
     def resume_tailor_agent(self) -> Agent:
+        # Only focused on writing — not reading
         return Agent(config=self.agents_config.get("resume_tailor"), tools=[], verbose=False)
 
     # --- Tasks ---
@@ -119,30 +112,49 @@ class JobSearchCrew:
     def job_search_task(self) -> Task:
         def run(title: str, city: str, limit: int = 8) -> List[JobListing]:
             raw_jobs = self.indeed_mcp.search_jobs(title, city, limit)
-            jobs = [JobListing(
-                title=j.get("title") or j.get("job_title", ""),
-                company=j.get("company") or j.get("employer", ""),
-                location=j.get("location", city),
-                description=j.get("description") or j.get("summary", ""),
-                raw=j
-            ) for j in raw_jobs]
-            return jobs
+            return [
+                JobListing(
+                    title=j.get("title") or j.get("job_title", ""),
+                    company=j.get("company") or j.get("employer", ""),
+                    location=j.get("location", city),
+                    description=j.get("description") or j.get("summary", ""),
+                    raw=j
+                )
+                for j in raw_jobs
+            ]
         return Task(config=self.tasks_config.get("job_search_task"), func=run)
 
     @task
     def employer_verification_task(self) -> Task:
         def run(jobs: List[JobListing]) -> List[VerificationResult]:
-            out = []
+            csv_content = self.read_h1b_csv.run()
+            df = pd.read_csv(pd.compat.StringIO(csv_content))
+            results = []
             for job in jobs:
-                res = self.h1b_mcp.verify(job.company)
-                out.append(VerificationResult(company=job.company, eligible=res["eligible"],
-                                              records=res["records"], note=res["note"]))
-            return out
+                matches = df[df["Employer"].str.contains(job.company, case=False, na=False)]
+                eligible = not matches.empty
+                results.append(VerificationResult(
+                    company=job.company,
+                    eligible=eligible,
+                    records=len(matches),
+                    note="Employer found in H-1B dataset" if eligible else "No record found"
+                ))
+            return results
         return Task(config=self.tasks_config.get("employer_verification_task"), func=run)
 
     @task
+    def resume_reader_task(self) -> Task:
+        def run() -> str:
+            # Summarize and extract key insights from the resume
+            resume_text = self.read_resume.run()
+            search_summary = self.semantic_search_resume.run("Summarize key skills and experiences")
+            combined_summary = f"Resume Overview:\n{resume_text[:1000]}\n\nKey Highlights:\n{search_summary}"
+            return combined_summary
+        return Task(config=self.tasks_config.get("resume_reader_task"), func=run)
+
+    @task
     def resume_tailoring_task(self) -> Task:
-        def run(job: JobListing, resume_text: str) -> TailoredResume:
+        def run(job: JobListing, resume_summary: str) -> TailoredResume:
             prompt = f"""
 You are a resume tailoring assistant.
 Job Title: {job.title}
@@ -150,10 +162,10 @@ Company: {job.company}
 Job Description:
 {job.description}
 
-User resume:
-{resume_text}
+Candidate profile summary:
+{resume_summary}
 
-Produce a tailored resume optimized for this job and a short bullet list of what was changed.
+Write a tailored resume section optimized for this job. 
 Return JSON with fields: 'tailored_text' and 'changes'.
 """
             raw_out = LLM.chat(prompt)
@@ -170,21 +182,28 @@ Return JSON with fields: 'tailored_text' and 'changes'.
 
     @task
     def orchestration_task(self) -> Task:
-        def run(title: str, city: str, resume_text: str) -> Dict[str, Any]:
+        def run(title: str, city: str) -> Dict[str, Any]:
             jobs = self.job_search_task().run(title=title, city=city, limit=8)
             verifications = self.employer_verification_task().run(jobs=jobs)
+            resume_summary = self.resume_reader_task().run()
 
             results = []
             for job, ver in zip(jobs, verifications):
                 if not ver.eligible:
                     results.append({"job": job.dict(), "verified": ver.dict(), "tailored": None})
                     continue
-                tailored = self.resume_tailoring_task().run(job=job, resume_text=resume_text)
+                tailored = self.resume_tailoring_task().run(job=job, resume_summary=resume_summary)
                 results.append({"job": job.dict(), "verified": ver.dict(), "tailored": tailored.dict()})
             return {"query": {"title": title, "city": city}, "results": results}
         return Task(config=self.tasks_config.get("workflow_orchestration_task"), func=run)
 
+    # --- Crew ---
     @crew
     def crew(self) -> Crew:
-        return Crew(agents=self.agents, tasks=self.tasks, process=Process.sequential, verbose=2, memory=True)
-
+        return Crew(
+            agents=self.agents,
+            tasks=self.tasks,
+            process=Process.sequential,
+            verbose=2,
+            memory=True
+        )

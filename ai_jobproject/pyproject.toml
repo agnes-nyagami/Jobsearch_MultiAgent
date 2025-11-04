@@ -5,7 +5,10 @@ description = "AI_Jobproject using crewAI"
 authors = [{ name = "Nyagami", email = "abn5753@uncw.edu" }]
 requires-python = ">=3.10,<3.14"
 dependencies = [
-    "crewai[tools]==1.2.1"
+    "crewai-tools>=1.2.1",
+    "crewai[openai,ropenai,tools]==1.2.1",
+    "pandas>=2.3.3",
+    "qdrant-client>=1.15.1",
 ]
 
 [project.scripts]

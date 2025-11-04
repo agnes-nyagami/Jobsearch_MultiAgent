@@ -2,9 +2,8 @@
 import sys
 import warnings
 
-from datetime import datetime
 
-from ai_jobproject.crew import AiJobproject
+from ai_jobproject.crew import JobSearchCrew
 
 warnings.filterwarnings("ignore", category=SyntaxWarning, module="pysbd")
 
@@ -18,12 +17,12 @@ def run():
     Run the crew.
     """
     inputs = {
-        'topic': 'AI LLMs',
-        'current_year': str(datetime.now().year)
+        'title': "Data Scientist",
+        'city': "Wilmington, NC"
     }
 
     try:
-        AiJobproject().crew().kickoff(inputs=inputs)
+        JobSearchCrew().crew().kickoff(inputs=inputs)
     except Exception as e:
         raise Exception(f"An error occurred while running the crew: {e}")
 
@@ -33,11 +32,11 @@ def train():
     Train the crew for a given number of iterations.
     """
     inputs = {
-        "topic": "AI LLMs",
-        'current_year': str(datetime.now().year)
+        "title": "Data Analyst",
+        "city": "Raleigh, NC"
     }
     try:
-        AiJobproject().crew().train(n_iterations=int(sys.argv[1]), filename=sys.argv[2], inputs=inputs)
+        JobSearchCrew().crew().train(n_iterations=int(sys.argv[1]), filename=sys.argv[2], inputs=inputs)
 
     except Exception as e:
         raise Exception(f"An error occurred while training the crew: {e}")
@@ -47,7 +46,7 @@ def replay():
     Replay the crew execution from a specific task.
     """
     try:
-        AiJobproject().crew().replay(task_id=sys.argv[1])
+        JobSearchCrew().crew().replay(task_id=sys.argv[1])
 
     except Exception as e:
         raise Exception(f"An error occurred while replaying the crew: {e}")
@@ -57,12 +56,12 @@ def test():
     Test the crew execution and returns the results.
     """
     inputs = {
-        "topic": "AI LLMs",
-        "current_year": str(datetime.now().year)
+        "title": "Machine Learning Engineer",
+        "city": "Charlotte, NC"
     }
 
     try:
-        AiJobproject().crew().test(n_iterations=int(sys.argv[1]), eval_llm=sys.argv[2], inputs=inputs)
+        JobSearchCrew().crew().test(n_iterations=int(sys.argv[1]), eval_llm=sys.argv[2], inputs=inputs)
 
     except Exception as e:
         raise Exception(f"An error occurred while testing the crew: {e}")
@@ -83,12 +82,12 @@ def run_with_trigger():
 
     inputs = {
         "crewai_trigger_payload": trigger_payload,
-        "topic": "",
-        "current_year": ""
+        "title": "",
+        "city": ""
     }
 
     try:
-        result = AiJobproject().crew().kickoff(inputs=inputs)
+        result = JobSearchCrew().crew().kickoff(inputs=inputs)
         return result
     except Exception as e:
         raise Exception(f"An error occurred while running the crew with trigger: {e}")

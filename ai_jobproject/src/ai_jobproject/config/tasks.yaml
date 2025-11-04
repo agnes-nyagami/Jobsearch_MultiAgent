@@ -25,6 +25,24 @@ employer_verification_task:
     - Notes if data was unavailable
   agent: employer_verifier
 
+resume_reader_task:
+  description: >
+    Read and analyze the user's uploaded resume to extract key professional information. 
+    Identify major sections such as contact details, education, work experience, skills, certifications, 
+    and achievements. Summarize this data in a structured format for use by other agents, 
+    particularly the resume_tailor, in later stages of the workflow. 
+    If the resume contains non-standard formatting or unclear data, interpret it intelligently 
+    and provide a clean, standardized version.
+  expected_output: >
+    A structured resume summary ready for downstream processing.
+    The output should include:
+    - Candidate Name and Contact Information
+    - Education History
+    - Work Experience (titles, companies, dates, and key responsibilities)
+    - Skills and Technical Competencies
+    - Certifications or Achievements
+  agent: resume_reader
+
 resume_tailoring_task:
   description: >
     For each verified job where the employer is eligible for sponsorship, 
